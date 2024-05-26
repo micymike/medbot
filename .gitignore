@@ -1,2 +1,6 @@
 .venv
 _pycache_
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
