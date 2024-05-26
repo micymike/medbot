@@ -3,6 +3,7 @@ import replicate
 import os
 import webbrowser
 from config import REPLICATE_API_KEY
+from transformers import pipeline
 
 # Set the app's title
 st.set_page_config(page_title="Medical Chatbot", page_icon="💊")
@@ -62,15 +63,16 @@ st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
 
 # Function to check if the question is relevant
 def is_relevant_question(prompt_input):
-    relevant_keywords = ["health", "medicine", "wellness", "doctor", "symptoms", "treatment", "diagnosis", "disease", "condition", "nutrition", "fitness", "exercise", "mental health", "therapy", "drug", "medication", "vaccine", "infection", "prevention", "diet", "healthy living"]
+    relevant_keywords = [
+        "health", "medicine", "wellness", "doctor", "symptoms", "treatment", "diagnosis", "disease", "condition",
+        "nutrition", "fitness", "exercise", "mental health", "therapy", "drug", "medication", "vaccine", "infection",
+        "prevention", "diet", "healthy living"
+    ]
     prompt_lower = prompt_input.lower()
     return any(keyword in prompt_lower for keyword in relevant_keywords)
 
-# Function to generate LLaMA2 response
-def generate_llama2_response(prompt_input):
-    if not is_relevant_question(prompt_input):
-        return ["I'm sorry, I can only answer questions regarding health, medicine, and wellness."]
-
+# Function to generate LLaMA2 response using Replicate
+def generate_llama2_response_replicate(prompt_input):
     string_dialogue = "You are a helpful assistant. You do not respond as 'User' or pretend to be 'User'. You only respond once as 'Assistant'.\n\n"
     for dict_message in st.session_state.messages:
         if dict_message["role"] == "user":
@@ -83,10 +85,37 @@ def generate_llama2_response(prompt_input):
             llm,  # Use the selected model
             input={"prompt": f"{string_dialogue} {prompt_input}\nAssistant: ", "temperature": 0.1, "top_p": 0.9, "max_length": 120, "repetition_penalty": 1.0}
         )
-        return output
+        return ''.join(output)
     except replicate.exceptions.ReplicateError as e:
         st.error(f"Replicate API error: {e}")
-        return ["Sorry, there was an error generating a response. Please check your API key and try again."]
+        return None
+
+# Function to generate response using Hugging Face
+def generate_llama2_response_huggingface(prompt_input):
+    model_name = "decapoda-research/llama-7b-hf" if selected_model == 'Llama2-7B' else "decapoda-research/llama-13b-hf"
+    generator = pipeline('text-generation', model=model_name, tokenizer=model_name)
+    
+    string_dialogue = "You are a helpful assistant. You do not respond as 'User' or pretend to be 'User'. You only respond once as 'Assistant'.\n\n"
+    for dict_message in st.session_state.messages:
+        if dict_message["role"] == "user":
+            string_dialogue += "User: " + dict_message["content"] + "\n\n"
+        else:
+            string_dialogue += "Assistant: " + dict_message["content"] + "\n\n"
+
+    prompt = f"{string_dialogue} {prompt_input}\nAssistant: "
+    output = generator(prompt, max_length=200, num_return_sequences=1, temperature=0.7, top_p=0.9)
+    return output[0]['generated_text']
+
+# Function to generate response
+def generate_llama2_response(prompt_input):
+    if not is_relevant_question(prompt_input):
+        return ["I'm sorry, I can only answer questions regarding health, medicine, and wellness."]
+    
+    response = generate_llama2_response_replicate(prompt_input)
+    if response is None:
+        response = generate_llama2_response_huggingface(prompt_input)
+    
+    return response
 
 # Chat input and response generation
 if replicate_api:
@@ -95,8 +124,7 @@ if replicate_api:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.spinner("Thinking..."):
             response = generate_llama2_response(prompt)
-            full_response = ''.join(response)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
 def open_blog():
     webbrowser.open_new_tab("https://www.google.com/index.html")
